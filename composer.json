@@ -1,0 +1,52 @@
+{
+    "name": "jobins/magika-file-validator",
+    "description": "Custom file type validation for Laravel using magika",
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Sandip Shrestha",
+            "email": "sandipshrestha@jobins.jp"
+        }
+    ],
+    "keywords": [
+        "jobins",
+        "magika-file-validator",
+        "magika"
+    ],
+    "homepage": "https://github.com/jobins/magika-file-validator",
+    "require": {
+        "php": "^7.4|^8.0",
+        "illuminate/http": "*",
+        "illuminate/support": "*",
+        "illuminate/translation": "*",
+        "illuminate/validation": "*"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^6.43"
+    },
+    "autoload": {
+        "psr-4": {
+            "Jobins\\MagikaFileValidator\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Jobins\\Tests\\": "tests"
+        }
+    },
+    "scripts": {
+        "test": "vendor/bin/phpunit",
+        "test-coverage": "vendor/bin/phpunit --coverage-html coverage"
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Jobins\\MagikaFileValidator\\MagikaFileValidatorServiceProvider"
+            ]
+        }
+    }
+}
