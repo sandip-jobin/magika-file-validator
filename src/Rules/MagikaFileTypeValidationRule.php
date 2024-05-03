@@ -1,15 +1,20 @@
 <?php
 
-namespace Jobins\MagikaFileValidator;
+namespace Jobins\MagikaFileValidator\Rules;
 
-use Closure;
-use Illuminate\Contracts\Validation\ValidationRule;
+use Illuminate\Contracts\Validation\Rule;
 use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\Process;
-use Illuminate\Translation\PotentiallyTranslatedString;
+use RuntimeException;
 
-class ValidateFileTypeRule implements ValidationRule
+class MagikaFileTypeValidationRule implements Rule
 {
+    /** @var string */
+    protected string $attribute;
+
+    /** @var array */
+    protected array $validTypes;
+
+    /** @var array|string[] */
     private array $typeMapping = [
         'Adobe Illustrator Artwork'                      => 'ai',
         'Android package'                                => 'apk',
@@ -30,14 +35,14 @@ class ValidateFileTypeRule implements ValidationRule
         'CSV document'                                   => 'csv',
         'Debian binary package'                          => 'deb',
         'Dalvik dex file'                                => 'dex',
-        'A directory'                                    => '', // No extension for directories
+        'A directory'                                    => '',
         'Apple disk image'                               => 'dmg',
         'Microsoft Word CDF document'                    => 'doc',
         'Microsoft Word 2007+ document'                  => 'docx',
-        'ELF executable'                                 => '', // No standard extension for ELF executables
+        'ELF executable'                                 => '',
         'Windows Enhanced Metafile image data'           => 'emf',
         'RFC 822 mail'                                   => 'eml',
-        'Empty file'                                     => '', // No extension for empty files
+        'Empty file'                                     => '',
         'EPUB document'                                  => 'epub',
         'FLAC audio bitstream data'                      => 'flac',
         'GIF image data'                                 => 'gif',
@@ -59,13 +64,13 @@ class ValidateFileTypeRule implements ValidationRule
         'Lisp source'                                    => 'lisp',
         'MS Windows shortcut'                            => 'lnk',
         'M3U playlist'                                   => 'm3u',
-        'Mach-O executable'                              => '', // No standard extension for Mach-O executables
+        'Mach-O executable'                              => '',
         'Makefile source'                                => 'mk',
         'Markdown document'                              => 'md',
         'MHTML document'                                 => 'mht',
         'MP3 media file'                                 => 'mp3',
         'MP4 media file'                                 => 'mp4',
-        'MS Compress archive data'                       => '??', // Unsure of the extension, need clarification
+        'MS Compress archive data'                       => '??',
         'Microsoft Installer file'                       => 'msi',
         'Windows Update Package file'                    => 'mum',
         'ODEX ELF executable'                            => 'odex',
@@ -102,15 +107,15 @@ class ValidateFileTypeRule implements ValidationRule
         'Squash filesystem'                              => 'sqsh',
         'SVG Scalable Vector Graphics image data'        => 'svg',
         'Macromedia Flash data'                          => 'swf',
-        'Symbolic link to'                               => '', // No extension for symbolic links
-        'Symbolic link (textual representation)'         => '', // No extension for symbolic links
+        'Symbolic link to'                               => '',
+        'Symbolic link (textual representation)'         => '',
         'POSIX tar archive'                              => 'tar',
         'Targa image data'                               => 'tga',
         'TIFF image data'                                => 'tiff',
         'BitTorrent file'                                => 'torrent',
         'TrueType Font data'                             => 'ttf',
         'Generic text document'                          => 'txt',
-        'Unknown binary data'                            => '', // No extension for unknown data
+        'Unknown binary data'                            => '',
         'MS Visual Basic source (VBA)'                   => 'vba',
         'Waveform Audio file (WAV)'                      => 'wav',
         'WebM data'                                      => 'webm',
@@ -129,42 +134,75 @@ class ValidateFileTypeRule implements ValidationRule
         'zlib compressed data'                           => 'zlib',
     ];
 
-    private array $validTypes;
-
+    /**
+     * @param array $validTypes
+     */
     public function __construct(array $validTypes)
     {
         $this->validTypes = $validTypes;
     }
 
     /**
-     * Run the validation rule.
+     * @param $attribute
+     * @param $value
      *
-     * @param Closure(string): PotentiallyTranslatedString $fail
+     * @return bool
      */
-    public function validate(string $attribute, mixed $value, Closure $fail): void
+    public function passes($attribute, $value): bool
     {
+        $this->attribute = $attribute;
+
         if ( !$value instanceof UploadedFile ) {
-            $fail('validation.file')->translate();
+            return false;
         }
 
-        $extension = $this->getFileExtension($value->getPathname());
+        $fileExtension = $this->getFileExtension($value->getPathname());
 
-        if ( !in_array($extension, $this->validTypes) ) {
-            $fail('validation.mimes')->translate([
-                'values' => implode(", ", $this->validTypes)
-            ]);
-        }
+        return in_array($fileExtension, $this->validTypes);
     }
 
+    /**
+     * @param string $path
+     *
+     * @return string|null
+     */
     private function getFileExtension(string $path): ?string
     {
-        $magikaPath = config('app.magika_binary_path');
-        $result     = Process::path($magikaPath)->run("./magika $path");
-        $fileLabel  = $this->parseFileLabel($result->output());
+        $magikaPath = $this->getMagikaPath();
+        $result     = $this->executeMagikaCommand($magikaPath, $path);
+        $fileLabel  = $this->parseFileLabel($result);
 
         return $this->getExtensionFromLabel($fileLabel);
     }
 
+    private function getMagikaPath(): string
+    {
+        $magikaPath = config('magika.magika_binary_path');
+
+        if ( !is_executable($magikaPath) ) {
+            throw new RuntimeException("The Magika binary is not executable or not found.");
+        }
+
+        return $magikaPath;
+    }
+
+    private function executeMagikaCommand(string $magikaPath, string $path): string
+    {
+        $command = escapeshellcmd("{$magikaPath} ".escapeshellarg($path));
+        $result  = shell_exec($command);
+
+        if ( $result === null ) {
+            throw new RuntimeException("Failed to execute Magika command.");
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param $output
+     *
+     * @return string|null
+     */
     private function parseFileLabel($output): ?string
     {
         if ( preg_match('/:\s*(.*?)\s*\(confidence:/i', $output, $matches) ) {
@@ -174,9 +212,26 @@ class ValidateFileTypeRule implements ValidationRule
         return null;
     }
 
+    /**
+     * @param $fileTypeLabel
+     *
+     * @return string|null
+     */
     private function getExtensionFromLabel($fileTypeLabel): ?string
     {
         return $fileTypeLabel ? ($this->typeMapping[$fileTypeLabel] ?? null) : null;
     }
-}
 
+    /**
+     * @return string
+     */
+    public function message(): string
+    {
+        $formattedTypes = implode(', ', $this->validTypes);
+
+        return __('validation.mimes', [
+            'attribute' => $this->attribute,
+            'values'    => $formattedTypes
+        ]);
+    }
+}
